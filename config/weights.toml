@@ -1,0 +1,26 @@
+# スコアリングの重み・閾値設定（初期値は仮置き。フェーズ2のバックテストで調整する）
+
+[thresholds]
+rsi_oversold = 30.0
+ma25_deviation_threshold = -10.0
+ma75_deviation_threshold = -10.0
+low52w_deviation_threshold = 20.0
+
+[weights.fundamental]
+per = 1.0
+pbr = 1.0
+roe = 1.0
+
+[weights.technical]
+rsi = 1.0
+ma25 = 1.0
+ma75 = 1.0
+low52w = 1.0
+
+[weights.composite]
+fundamental = 0.5
+technical = 0.5
+
+[sector]
+# "33" または "17"
+classification = "33"
