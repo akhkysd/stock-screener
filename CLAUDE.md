@@ -30,7 +30,7 @@ config/            重み・閾値・業種分類設定
 - ローカルバッチ実行: `python -m src.main`（フェーズ1実装後に整備）
 
 ## コーディング規約
-- 言語: Python 3.9+（開発機のシステムPythonに準拠）
+- 言語: Python 3.13（pyenvで管理、`.python-version`参照）
 - フォーマッタ/Linter: ruff
 - 型チェック: mypy（可能な範囲で型ヒント必須）
 - 外部APIクライアントはインターフェースを抽象化し、差し替え可能にする（yfinance等の非公式ライブラリ対策）
