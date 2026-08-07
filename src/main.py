@@ -1,0 +1,140 @@
+import argparse
+import datetime as dt
+import sqlite3
+from pathlib import Path
+from typing import Protocol
+
+import pandas as pd
+
+from src.data_sources.base import PriceFetchResult
+from src.data_sources.jpx_master import update_master
+from src.data_sources.yfinance_client import YFinancePriceClient
+from src.data_sources.yfinance_fundamentals import (
+    FundamentalsFetchResult,
+    YFinanceFundamentalsClient,
+)
+from src.db import (
+    apply_schema,
+    codes_missing_for_date,
+    get_all_codes,
+    get_connection,
+    get_sector_map,
+    insert_report_output,
+    read_price_history,
+    upsert_daily_prices,
+)
+from src.report.report_generator import generate_markdown_report
+from src.scoring.composite_score import compute_composite_scores, load_weights
+from src.scoring.fundamental_score import compute_fundamental_zscores
+from src.scoring.technical_score import compute_technical_indicators
+from src.sector.sector_aggregation import compute_sector_ranking
+
+DEFAULT_DB_PATH = "data/stock_screener.db"
+DEFAULT_REPORTS_DIR = "data/reports"
+PRICE_LOOKBACK_DAYS = 400
+
+
+class PriceClient(Protocol):
+    def fetch_daily_prices(self, codes: list[str], start: str, end: str) -> PriceFetchResult: ...
+
+
+class FundamentalsClient(Protocol):
+    def fetch_fundamentals(self, codes: list[str]) -> FundamentalsFetchResult: ...
+
+
+def run_daily_batch(
+    conn: sqlite3.Connection,
+    price_client: PriceClient,
+    fundamentals_client: FundamentalsClient,
+    weights: dict,
+    run_date: str,
+    codes: list[str] | None = None,
+) -> tuple[str, pd.DataFrame]:
+    all_codes = codes if codes is not None else get_all_codes(conn)
+    classification = weights["sector"]["classification"]
+    sector_map = get_sector_map(conn, classification=classification)
+
+    lookback_start = (
+        dt.date.fromisoformat(run_date) - dt.timedelta(days=PRICE_LOOKBACK_DAYS)
+    ).isoformat()
+
+    missing_today = codes_missing_for_date(conn, all_codes, run_date)
+    price_failed: list[str] = []
+    if missing_today:
+        price_result = price_client.fetch_daily_prices(missing_today, lookback_start, run_date)
+        if not price_result.prices.empty:
+            upsert_daily_prices(conn, price_result.prices, source="yfinance")
+        price_failed = price_result.failed_codes
+
+    price_history = read_price_history(conn, all_codes, start_date=lookback_start)
+    technical_indicators = compute_technical_indicators(price_history)
+    latest_technical = (
+        technical_indicators.sort_values("date").groupby("code").tail(1)
+        if not technical_indicators.empty
+        else technical_indicators
+    )
+
+    fundamentals_result = fundamentals_client.fetch_fundamentals(all_codes)
+    fundamentals_df = fundamentals_result.fundamentals.copy()
+    fundamentals_df["sector"] = fundamentals_df["code"].map(sector_map)
+    fundamentals_df = fundamentals_df.dropna(subset=["sector"])
+
+    fundamental_scores = compute_fundamental_zscores(fundamentals_df)
+    composite = compute_composite_scores(fundamental_scores, latest_technical, weights)
+    ranking = compute_sector_ranking(composite)
+
+    names = {
+        row["code"]: row["name"] for row in conn.execute("SELECT code, name FROM securities_master")
+    }
+    ranking = ranking.copy()
+    ranking["name"] = ranking["code"].map(names)
+
+    missing_codes = sorted(
+        set(price_failed)
+        | set(fundamentals_result.failed_codes)
+        | (set(all_codes) - set(ranking["code"]))
+    )
+
+    report = generate_markdown_report(run_date, ranking, missing_codes)
+    insert_report_output(conn, run_date, ranking)
+    return report, ranking
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="国内割安・底値株デイリーレポート バッチ")
+    parser.add_argument("--limit", type=int, default=None, help="動作確認用に対象銘柄数を制限")
+    parser.add_argument("--db-path", default=DEFAULT_DB_PATH)
+    parser.add_argument("--skip-master-update", action="store_true")
+    args = parser.parse_args()
+
+    Path(args.db_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(DEFAULT_REPORTS_DIR).mkdir(parents=True, exist_ok=True)
+
+    conn = get_connection(args.db_path)
+    apply_schema(conn)
+
+    if not args.skip_master_update:
+        count = update_master(conn, updated_at=dt.date.today().isoformat())
+        print(f"銘柄マスタ更新: {count}件")
+
+    run_date = dt.date.today().isoformat()
+    codes = get_all_codes(conn)
+    if args.limit:
+        codes = codes[: args.limit]
+
+    weights = load_weights()
+    price_client = YFinancePriceClient()
+    fundamentals_client = YFinanceFundamentalsClient()
+
+    report, ranking = run_daily_batch(
+        conn, price_client, fundamentals_client, weights, run_date, codes=codes
+    )
+
+    report_path = Path(DEFAULT_REPORTS_DIR) / f"{run_date}.md"
+    report_path.write_text(report, encoding="utf-8")
+    print(f"レポート出力: {report_path}")
+    print(f"対象銘柄数: {len(ranking)}")
+
+
+if __name__ == "__main__":
+    main()
