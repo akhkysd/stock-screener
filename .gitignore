@@ -6,6 +6,7 @@ data/*.db
 data/*.sqlite3
 data/cache/
 data/reports/
+data/backtest_report.md
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
