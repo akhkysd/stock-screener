@@ -9,7 +9,7 @@ def compute_sector_ranking(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy()
     grouped = result.groupby(SECTOR_COLUMN)[SCORE_COLUMN]
 
-    result["sector_rank"] = grouped.rank(method="min", ascending=False).astype(int)
+    result["sector_rank"] = grouped.rank(method="min", ascending=False).astype("Int64")
 
     mean = grouped.transform("mean")
     std = grouped.transform(lambda s: s.std(ddof=0))

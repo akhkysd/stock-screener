@@ -77,6 +77,15 @@ def insert_report_output(conn: sqlite3.Connection, date: str, ranking_df: pd.Dat
     conn.execute("DELETE FROM report_output WHERE date = ?", (date,))
     conn.executemany(
         "INSERT INTO report_output (date, sector, rank, code, comment) VALUES (?, ?, ?, ?, ?)",
-        [(date, r.sector, r.sector_rank, r.code, None) for r in ranking_df.itertuples()],
+        [
+            (
+                date,
+                r.sector,
+                None if pd.isna(r.sector_rank) else int(r.sector_rank),
+                r.code,
+                None,
+            )
+            for r in ranking_df.itertuples()
+        ],
     )
     conn.commit()

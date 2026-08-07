@@ -138,6 +138,33 @@ def test_run_daily_batch_flags_failed_codes_as_missing(conn):
     assert "9999" in report
 
 
+def test_run_daily_batch_treats_unscored_code_as_missing_not_nan_row(conn):
+    price_client = FakePriceClient(_price_df())
+    fundamentals = pd.DataFrame(
+        [
+            {"code": "1301", "per": 10.0, "pbr": 1.0, "roe": 8.0},
+            {"code": "7203", "per": None, "pbr": None, "roe": None},
+        ]
+    )
+    fundamentals_client = FakeFundamentalsClient(fundamentals)
+    weights = load_weights()
+
+    report, ranking = run_daily_batch(
+        conn,
+        price_client,
+        fundamentals_client,
+        weights,
+        run_date="2026-08-07",
+        codes=["1301", "7203"],
+    )
+
+    assert "nan" not in report
+    assert "データ欠損銘柄" in report
+    assert "7203" in report.split("データ欠損銘柄")[1]
+    # still recorded in the returned ranking / DB for reproducibility
+    assert "7203" in set(ranking["code"])
+
+
 def test_run_daily_batch_skips_refetch_for_already_cached_date(conn):
     price_client = FakePriceClient(_price_df())
     fundamentals_client = FakeFundamentalsClient(_fundamentals_df())

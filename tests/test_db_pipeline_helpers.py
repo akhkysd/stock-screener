@@ -143,6 +143,17 @@ def test_codes_missing_for_date(conn):
     assert missing == ["7203"]
 
 
+def test_insert_report_output_handles_nan_rank(conn):
+    ranking_df = pd.DataFrame([{"code": "1301", "sector": "食品", "sector_rank": pd.NA}]).astype(
+        {"sector_rank": "Int64"}
+    )
+
+    insert_report_output(conn, date="2026-08-07", ranking_df=ranking_df)
+
+    row = conn.execute("SELECT rank FROM report_output").fetchone()
+    assert row["rank"] is None
+
+
 def test_insert_report_output(conn):
     ranking_df = pd.DataFrame(
         [

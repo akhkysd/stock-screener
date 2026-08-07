@@ -45,8 +45,8 @@ CREATE TABLE IF NOT EXISTS valuation_score (
 CREATE TABLE IF NOT EXISTS report_output (
     date TEXT NOT NULL,
     sector TEXT NOT NULL,
-    rank INTEGER NOT NULL,
+    rank INTEGER,
     code TEXT NOT NULL,
     comment TEXT,
-    PRIMARY KEY (date, sector, rank)
+    PRIMARY KEY (date, code)
 );

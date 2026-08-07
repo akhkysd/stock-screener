@@ -89,13 +89,15 @@ def run_daily_batch(
     ranking = ranking.copy()
     ranking["name"] = ranking["code"].map(names)
 
+    unscored_mask = ranking["composite_score"].isna()
     missing_codes = sorted(
         set(price_failed)
         | set(fundamentals_result.failed_codes)
         | (set(all_codes) - set(ranking["code"]))
+        | set(ranking.loc[unscored_mask, "code"])
     )
 
-    report = generate_markdown_report(run_date, ranking, missing_codes)
+    report = generate_markdown_report(run_date, ranking[~unscored_mask], missing_codes)
     insert_report_output(conn, run_date, ranking)
     return report, ranking
 

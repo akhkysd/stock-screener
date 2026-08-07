@@ -58,6 +58,23 @@ def test_single_member_sector_gets_neutral_deviation():
     assert result.iloc[0]["sector_rank"] == 1
 
 
+def test_nan_composite_score_does_not_crash():
+    df = pd.DataFrame(
+        [
+            {"code": "1", "sector": "A", "composite_score": 5.0},
+            {"code": "2", "sector": "A", "composite_score": float("nan")},
+            {"code": "3", "sector": "A", "composite_score": 1.0},
+        ]
+    )
+
+    result = compute_sector_ranking(df).set_index("code")
+
+    assert result.loc["1", "sector_rank"] == 1
+    assert result.loc["3", "sector_rank"] == 2
+    assert pd.isna(result.loc["2", "sector_rank"])
+    assert pd.isna(result.loc["2", "sector_deviation"])
+
+
 def test_ties_get_the_same_rank():
     df = pd.DataFrame(
         [
