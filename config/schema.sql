@@ -42,6 +42,19 @@ CREATE TABLE IF NOT EXISTS valuation_score (
     PRIMARY KEY (code, date)
 );
 
+CREATE TABLE IF NOT EXISTS fundamentals (
+    code TEXT NOT NULL,
+    fiscal_period TEXT NOT NULL,
+    eps REAL,
+    bps REAL,
+    net_income REAL,
+    equity REAL,
+    shares_outstanding REAL,
+    doc_id TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (code, fiscal_period)
+);
+
 CREATE TABLE IF NOT EXISTS report_output (
     date TEXT NOT NULL,
     sector TEXT NOT NULL,

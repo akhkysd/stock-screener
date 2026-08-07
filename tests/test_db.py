@@ -7,6 +7,7 @@ EXPECTED_TABLES = {
     "daily_price",
     "technical_score",
     "valuation_score",
+    "fundamentals",
     "report_output",
 }
 
