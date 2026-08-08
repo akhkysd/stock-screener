@@ -55,6 +55,14 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     PRIMARY KEY (code, fiscal_period)
 );
 
+CREATE TABLE IF NOT EXISTS yfinance_fundamentals_cache (
+    code TEXT PRIMARY KEY,
+    per REAL,
+    pbr REAL,
+    roe REAL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS report_output (
     date TEXT NOT NULL,
     sector TEXT NOT NULL,

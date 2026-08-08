@@ -8,6 +8,7 @@ EXPECTED_TABLES = {
     "technical_score",
     "valuation_score",
     "fundamentals",
+    "yfinance_fundamentals_cache",
     "report_output",
 }
 

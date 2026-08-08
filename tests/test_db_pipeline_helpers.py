@@ -5,13 +5,16 @@ from src.data_sources.jpx_master import SecurityRecord, upsert_securities
 from src.db import (
     apply_schema,
     codes_missing_for_date,
+    codes_stale_for_fundamentals,
     codes_with_price_history,
     get_all_codes,
     get_connection,
     get_sector_map,
     insert_report_output,
     read_price_history,
+    read_yfinance_fundamentals,
     upsert_daily_prices,
+    upsert_yfinance_fundamentals,
 )
 
 
@@ -167,6 +170,61 @@ def test_codes_with_price_history(conn):
 
 def test_codes_with_price_history_empty_input_returns_empty_set(conn):
     assert codes_with_price_history(conn, []) == set()
+
+
+def test_codes_stale_for_fundamentals_treats_never_cached_as_stale(conn):
+    result = codes_stale_for_fundamentals(conn, ["1301", "7203"], as_of_date="2026-08-07")
+    assert set(result) == {"1301", "7203"}
+
+
+def test_codes_stale_for_fundamentals_excludes_recently_cached(conn):
+    df = pd.DataFrame([{"code": "1301", "per": 10.0, "pbr": 1.0, "roe": 0.1}])
+    upsert_yfinance_fundamentals(conn, df, updated_at="2026-08-05")
+
+    result = codes_stale_for_fundamentals(
+        conn, ["1301", "7203"], as_of_date="2026-08-07", max_age_days=7
+    )
+
+    assert result == ["7203"]
+
+
+def test_codes_stale_for_fundamentals_includes_old_cache_entries(conn):
+    df = pd.DataFrame([{"code": "1301", "per": 10.0, "pbr": 1.0, "roe": 0.1}])
+    upsert_yfinance_fundamentals(conn, df, updated_at="2026-07-01")
+
+    result = codes_stale_for_fundamentals(conn, ["1301"], as_of_date="2026-08-07", max_age_days=7)
+
+    assert result == ["1301"]
+
+
+def test_upsert_and_read_yfinance_fundamentals_round_trip(conn):
+    df = pd.DataFrame(
+        [
+            {"code": "1301", "per": 10.0, "pbr": 1.0, "roe": 0.1},
+            {"code": "7203", "per": 8.5, "pbr": 1.0, "roe": 0.12},
+        ]
+    )
+    upsert_yfinance_fundamentals(conn, df, updated_at="2026-08-07")
+
+    result = read_yfinance_fundamentals(conn, ["1301", "7203"])
+    result = result.set_index("code")
+
+    assert result.loc["1301", "per"] == 10.0
+    assert result.loc["7203", "roe"] == 0.12
+
+
+def test_upsert_yfinance_fundamentals_overwrites_existing(conn):
+    upsert_yfinance_fundamentals(
+        conn, pd.DataFrame([{"code": "1301", "per": 10.0, "pbr": 1.0, "roe": 0.1}]), "2026-08-01"
+    )
+    upsert_yfinance_fundamentals(
+        conn, pd.DataFrame([{"code": "1301", "per": 20.0, "pbr": 2.0, "roe": 0.2}]), "2026-08-07"
+    )
+
+    result = read_yfinance_fundamentals(conn, ["1301"])
+
+    assert len(result) == 1
+    assert result.iloc[0]["per"] == 20.0
 
 
 def test_insert_report_output_handles_nan_rank(conn):

@@ -16,13 +16,16 @@ from src.data_sources.yfinance_fundamentals import (
 from src.db import (
     apply_schema,
     codes_missing_for_date,
+    codes_stale_for_fundamentals,
     codes_with_price_history,
     get_all_codes,
     get_connection,
     get_sector_map,
     insert_report_output,
     read_price_history,
+    read_yfinance_fundamentals,
     upsert_daily_prices,
+    upsert_yfinance_fundamentals,
 )
 from src.report.report_generator import generate_markdown_report
 from src.scoring.composite_score import compute_composite_scores, load_weights
@@ -34,6 +37,7 @@ DEFAULT_DB_PATH = "data/stock_screener.db"
 DEFAULT_REPORTS_DIR = "data/reports"
 PRICE_LOOKBACK_DAYS = 400
 PRICE_INCREMENTAL_LOOKBACK_DAYS = 5
+FUNDAMENTALS_MAX_AGE_DAYS = 7
 
 
 class PriceClient(Protocol):
@@ -84,8 +88,19 @@ def run_daily_batch(
         else technical_indicators
     )
 
-    fundamentals_result = fundamentals_client.fetch_fundamentals(all_codes)
-    fundamentals_df = fundamentals_result.fundamentals.copy()
+    stale_codes = codes_stale_for_fundamentals(
+        conn, all_codes, run_date, max_age_days=FUNDAMENTALS_MAX_AGE_DAYS
+    )
+    fundamentals_failed: list[str] = []
+    if stale_codes:
+        fundamentals_result = fundamentals_client.fetch_fundamentals(stale_codes)
+        if not fundamentals_result.fundamentals.empty:
+            upsert_yfinance_fundamentals(
+                conn, fundamentals_result.fundamentals, updated_at=run_date
+            )
+        fundamentals_failed = fundamentals_result.failed_codes
+
+    fundamentals_df = read_yfinance_fundamentals(conn, all_codes)
     fundamentals_df["sector"] = fundamentals_df["code"].map(sector_map)
     fundamentals_df = fundamentals_df.dropna(subset=["sector"])
 
@@ -102,7 +117,7 @@ def run_daily_batch(
     unscored_mask = ranking["composite_score"].isna()
     missing_codes = sorted(
         set(price_failed)
-        | set(fundamentals_result.failed_codes)
+        | set(fundamentals_failed)
         | (set(all_codes) - set(ranking["code"]))
         | set(ranking.loc[unscored_mask, "code"])
     )

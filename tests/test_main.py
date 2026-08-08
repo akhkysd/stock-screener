@@ -41,8 +41,10 @@ class FakeFundamentalsClient:
     def __init__(self, fundamentals: pd.DataFrame, failed: list | None = None):
         self._fundamentals = fundamentals
         self._failed = failed or []
+        self.calls = []
 
     def fetch_fundamentals(self, codes):
+        self.calls.append(list(codes))
         return FakeFundamentalsResult(
             fundamentals=self._fundamentals[self._fundamentals["code"].isin(codes)].copy(),
             failed_codes=self._failed,
@@ -236,3 +238,41 @@ def test_run_daily_batch_uses_short_window_for_codes_with_existing_history(conn)
     assert len(day2_client.calls) == 1
     day2_start = day2_client.calls[0]["start"]
     assert (pd.Timestamp("2026-08-07") - pd.Timestamp(day2_start)).days <= 7
+
+
+def test_run_daily_batch_skips_fundamentals_refetch_within_cache_window(conn):
+    prices = _price_df()
+    fundamentals_client = FakeFundamentalsClient(_fundamentals_df())
+    weights = load_weights()
+
+    run_daily_batch(
+        conn,
+        FakePriceClient(prices),
+        fundamentals_client,
+        weights,
+        run_date="2026-08-01",
+        codes=["1301", "7203"],
+    )
+    assert len(fundamentals_client.calls) == 1
+
+    # still within the 7-day cache window -> no refetch
+    run_daily_batch(
+        conn,
+        FakePriceClient(prices),
+        fundamentals_client,
+        weights,
+        run_date="2026-08-03",
+        codes=["1301", "7203"],
+    )
+    assert len(fundamentals_client.calls) == 1
+
+    # past the cache window -> refetch happens
+    run_daily_batch(
+        conn,
+        FakePriceClient(prices),
+        fundamentals_client,
+        weights,
+        run_date="2026-08-10",
+        codes=["1301", "7203"],
+    )
+    assert len(fundamentals_client.calls) == 2

@@ -1,3 +1,4 @@
+import datetime as dt
 import sqlite3
 from pathlib import Path
 
@@ -82,6 +83,52 @@ def codes_with_price_history(conn: sqlite3.Connection, codes: list[str]) -> set[
         codes,
     ).fetchall()
     return {row["code"] for row in rows}
+
+
+def codes_stale_for_fundamentals(
+    conn: sqlite3.Connection, codes: list[str], as_of_date: str, max_age_days: int = 7
+) -> list[str]:
+    if not codes:
+        return []
+    threshold = (dt.date.fromisoformat(as_of_date) - dt.timedelta(days=max_age_days)).isoformat()
+    placeholders = ",".join("?" * len(codes))
+    rows = conn.execute(
+        f"SELECT code FROM yfinance_fundamentals_cache "
+        f"WHERE code IN ({placeholders}) AND updated_at >= ?",
+        [*codes, threshold],
+    ).fetchall()
+    fresh = {row["code"] for row in rows}
+    return [c for c in codes if c not in fresh]
+
+
+def upsert_yfinance_fundamentals(
+    conn: sqlite3.Connection, df: pd.DataFrame, updated_at: str
+) -> None:
+    conn.executemany(
+        """
+        INSERT INTO yfinance_fundamentals_cache (code, per, pbr, roe, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(code) DO UPDATE SET
+            per=excluded.per,
+            pbr=excluded.pbr,
+            roe=excluded.roe,
+            updated_at=excluded.updated_at
+        """,
+        [(r.code, r.per, r.pbr, r.roe, updated_at) for r in df.itertuples()],
+    )
+    conn.commit()
+
+
+def read_yfinance_fundamentals(conn: sqlite3.Connection, codes: list[str]) -> pd.DataFrame:
+    columns = ["code", "per", "pbr", "roe"]
+    if not codes:
+        return pd.DataFrame(columns=columns)
+    placeholders = ",".join("?" * len(codes))
+    query = (
+        f"SELECT code, per, pbr, roe FROM yfinance_fundamentals_cache "
+        f"WHERE code IN ({placeholders})"
+    )
+    return pd.read_sql_query(query, conn, params=codes)
 
 
 def insert_report_output(conn: sqlite3.Connection, date: str, ranking_df: pd.DataFrame) -> None:
