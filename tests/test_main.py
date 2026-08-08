@@ -25,11 +25,16 @@ class FakePriceClient:
     def __init__(self, prices: pd.DataFrame, failed: list | None = None):
         self._prices = prices
         self._failed = failed or []
+        self.calls = []
 
     def fetch_daily_prices(self, codes, start, end):
-        return FakePriceResult(
-            prices=self._prices[self._prices["code"].isin(codes)].copy(), failed_codes=self._failed
-        )
+        self.calls.append({"codes": list(codes), "start": start, "end": end})
+        subset = self._prices[
+            self._prices["code"].isin(codes)
+            & (self._prices["date"] >= start)
+            & (self._prices["date"] <= end)
+        ]
+        return FakePriceResult(prices=subset.copy(), failed_codes=self._failed)
 
 
 class FakeFundamentalsClient:
@@ -196,3 +201,38 @@ def test_run_daily_batch_skips_refetch_for_already_cached_date(conn):
     calls_after = conn.execute("SELECT COUNT(*) FROM daily_price").fetchone()[0]
 
     assert calls_after == calls_before
+
+
+def test_run_daily_batch_uses_short_window_for_codes_with_existing_history(conn):
+    fundamentals_client = FakeFundamentalsClient(_fundamentals_df())
+    weights = load_weights()
+
+    # day 1: both codes are brand new -> full lookback window
+    day1_client = FakePriceClient(_price_df())
+    run_daily_batch(
+        conn,
+        day1_client,
+        fundamentals_client,
+        weights,
+        run_date="2026-08-06",
+        codes=["1301", "7203"],
+    )
+    assert len(day1_client.calls) == 1
+    day1_start = day1_client.calls[0]["start"]
+    assert (
+        pd.Timestamp("2026-08-06") - pd.Timestamp(day1_start)
+    ).days > 300  # ~400-day backfill window
+
+    # day 2: both codes already have history -> short incremental window only
+    day2_client = FakePriceClient(_price_df())
+    run_daily_batch(
+        conn,
+        day2_client,
+        fundamentals_client,
+        weights,
+        run_date="2026-08-07",
+        codes=["1301", "7203"],
+    )
+    assert len(day2_client.calls) == 1
+    day2_start = day2_client.calls[0]["start"]
+    assert (pd.Timestamp("2026-08-07") - pd.Timestamp(day2_start)).days <= 7

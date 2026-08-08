@@ -16,6 +16,7 @@ from src.data_sources.yfinance_fundamentals import (
 from src.db import (
     apply_schema,
     codes_missing_for_date,
+    codes_with_price_history,
     get_all_codes,
     get_connection,
     get_sector_map,
@@ -32,6 +33,7 @@ from src.sector.sector_aggregation import compute_sector_ranking
 DEFAULT_DB_PATH = "data/stock_screener.db"
 DEFAULT_REPORTS_DIR = "data/reports"
 PRICE_LOOKBACK_DAYS = 400
+PRICE_INCREMENTAL_LOOKBACK_DAYS = 5
 
 
 class PriceClient(Protocol):
@@ -54,17 +56,25 @@ def run_daily_batch(
     classification = weights["sector"]["classification"]
     sector_map = get_sector_map(conn, classification=classification)
 
-    lookback_start = (
-        dt.date.fromisoformat(run_date) - dt.timedelta(days=PRICE_LOOKBACK_DAYS)
+    run_date_obj = dt.date.fromisoformat(run_date)
+    lookback_start = (run_date_obj - dt.timedelta(days=PRICE_LOOKBACK_DAYS)).isoformat()
+    incremental_start = (
+        run_date_obj - dt.timedelta(days=PRICE_INCREMENTAL_LOOKBACK_DAYS)
     ).isoformat()
 
     missing_today = codes_missing_for_date(conn, all_codes, run_date)
+    has_history = codes_with_price_history(conn, missing_today)
+    new_codes = [c for c in missing_today if c not in has_history]
+    existing_codes = [c for c in missing_today if c in has_history]
+
     price_failed: list[str] = []
-    if missing_today:
-        price_result = price_client.fetch_daily_prices(missing_today, lookback_start, run_date)
+    for codes_to_fetch, start in ((new_codes, lookback_start), (existing_codes, incremental_start)):
+        if not codes_to_fetch:
+            continue
+        price_result = price_client.fetch_daily_prices(codes_to_fetch, start, run_date)
         if not price_result.prices.empty:
             upsert_daily_prices(conn, price_result.prices, source="yfinance")
-        price_failed = price_result.failed_codes
+        price_failed.extend(price_result.failed_codes)
 
     price_history = read_price_history(conn, all_codes, start_date=lookback_start)
     technical_indicators = compute_technical_indicators(price_history)

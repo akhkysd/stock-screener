@@ -5,6 +5,7 @@ from src.data_sources.jpx_master import SecurityRecord, upsert_securities
 from src.db import (
     apply_schema,
     codes_missing_for_date,
+    codes_with_price_history,
     get_all_codes,
     get_connection,
     get_sector_map,
@@ -141,6 +142,31 @@ def test_codes_missing_for_date(conn):
     missing = codes_missing_for_date(conn, ["1301", "7203"], date="2026-08-07")
 
     assert missing == ["7203"]
+
+
+def test_codes_with_price_history(conn):
+    prices = pd.DataFrame(
+        [
+            {
+                "code": "1301",
+                "date": "2026-07-01",
+                "open": 1,
+                "high": 1,
+                "low": 1,
+                "close": 1,
+                "volume": 1,
+            }
+        ]
+    )
+    upsert_daily_prices(conn, prices, source="yfinance")
+
+    result = codes_with_price_history(conn, ["1301", "7203"])
+
+    assert result == {"1301"}
+
+
+def test_codes_with_price_history_empty_input_returns_empty_set(conn):
+    assert codes_with_price_history(conn, []) == set()
 
 
 def test_insert_report_output_handles_nan_rank(conn):

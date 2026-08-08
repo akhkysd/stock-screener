@@ -73,6 +73,17 @@ def codes_missing_for_date(conn: sqlite3.Connection, codes: list[str], date: str
     return [c for c in codes if c not in existing]
 
 
+def codes_with_price_history(conn: sqlite3.Connection, codes: list[str]) -> set[str]:
+    if not codes:
+        return set()
+    placeholders = ",".join("?" * len(codes))
+    rows = conn.execute(
+        f"SELECT DISTINCT code FROM daily_price WHERE code IN ({placeholders})",
+        codes,
+    ).fetchall()
+    return {row["code"] for row in rows}
+
+
 def insert_report_output(conn: sqlite3.Connection, date: str, ranking_df: pd.DataFrame) -> None:
     conn.execute("DELETE FROM report_output WHERE date = ?", (date,))
     conn.executemany(
