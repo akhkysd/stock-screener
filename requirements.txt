@@ -8,6 +8,7 @@ et_xmlfile==2.0.0
 idna==3.18
 iniconfig==2.3.0
 librt==0.14.0
+Markdown==3.10.3
 multitasking==0.0.13
 mypy==2.3.0
 mypy_extensions==1.1.0
@@ -26,6 +27,7 @@ pytest==9.1.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 pytz==2026.3.post1
+PyYAML==6.0.3
 requests==2.34.2
 ruff==0.16.1
 six==1.17.0
