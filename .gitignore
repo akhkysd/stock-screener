@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 .env
+.DS_Store
 data/*.db
 data/*.sqlite3
 data/cache/

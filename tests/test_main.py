@@ -1,3 +1,4 @@
+import datetime as dt
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -5,8 +6,20 @@ import pytest
 
 from src.data_sources.jpx_master import SecurityRecord, upsert_securities
 from src.db import apply_schema, get_connection
-from src.main import run_daily_batch
+from src.main import run_daily_batch, today_jst
 from src.scoring.composite_score import load_weights
+
+
+def test_today_jst_advances_date_before_utc_midnight():
+    # UTC 22:00 is already JST 07:00 the next calendar day
+    utc_instant = dt.datetime(2026, 8, 9, 22, 0, tzinfo=dt.UTC)
+    assert today_jst(utc_instant) == "2026-08-10"
+
+
+def test_today_jst_matches_utc_date_during_jst_daytime():
+    # UTC 03:00 is JST 12:00 the same calendar day
+    utc_instant = dt.datetime(2026, 8, 9, 3, 0, tzinfo=dt.UTC)
+    assert today_jst(utc_instant) == "2026-08-09"
 
 
 @dataclass

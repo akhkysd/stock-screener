@@ -1,6 +1,7 @@
 import argparse
 import datetime as dt
 import sqlite3
+import zoneinfo
 from pathlib import Path
 from typing import Protocol
 
@@ -38,6 +39,14 @@ DEFAULT_REPORTS_DIR = "data/reports"
 PRICE_LOOKBACK_DAYS = 400
 PRICE_INCREMENTAL_LOOKBACK_DAYS = 5
 FUNDAMENTALS_MAX_AGE_DAYS = 7
+JST = zoneinfo.ZoneInfo("Asia/Tokyo")
+
+
+def today_jst(now: dt.datetime | None = None) -> str:
+    """毎朝JSTでレポートを生成する想定のため、実行サーバーのタイムゾーンに依存させない
+    （GitHub ActionsランナーはUTCのため、date.today()だとcron発火時刻によって日付が1日ズレる）。"""
+    current = now if now is not None else dt.datetime.now(JST)
+    return current.astimezone(JST).date().isoformat()
 
 
 class PriceClient(Protocol):
@@ -141,10 +150,10 @@ def main() -> None:
     apply_schema(conn)
 
     if not args.skip_master_update:
-        count = update_master(conn, updated_at=dt.date.today().isoformat())
+        count = update_master(conn, updated_at=today_jst())
         print(f"銘柄マスタ更新: {count}件")
 
-    run_date = dt.date.today().isoformat()
+    run_date = today_jst()
     codes = get_all_codes(conn)
     if args.limit:
         codes = codes[: args.limit]
