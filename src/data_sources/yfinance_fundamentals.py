@@ -1,3 +1,4 @@
+import math
 import random
 import time
 from collections.abc import Callable
@@ -27,6 +28,17 @@ def _to_ticker(code: str) -> str:
 
 def _default_info_provider(ticker: str) -> dict:
     return yf.Ticker(ticker).info
+
+
+def _coerce_float(value: object) -> float | None:
+    """yfinanceの.infoは銘柄によって非数値（文字列プレースホルダ等）を返すことがある。"""
+    if value is None:
+        return None
+    try:
+        result = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
 
 
 class YFinanceFundamentalsClient:
@@ -66,9 +78,9 @@ class YFinanceFundamentalsClient:
                 rows.append(
                     {
                         "code": code,
-                        "per": info.get("trailingPE"),
-                        "pbr": info.get("priceToBook"),
-                        "roe": info.get("returnOnEquity"),
+                        "per": _coerce_float(info.get("trailingPE")),
+                        "pbr": _coerce_float(info.get("priceToBook")),
+                        "roe": _coerce_float(info.get("returnOnEquity")),
                     }
                 )
 
@@ -76,4 +88,6 @@ class YFinanceFundamentalsClient:
                 self._sleep(random.uniform(self._min_interval, self._max_interval))
 
         fundamentals = pd.DataFrame(rows, columns=FUNDAMENTALS_COLUMNS)
+        for column in ("per", "pbr", "roe"):
+            fundamentals[column] = fundamentals[column].astype(float)
         return FundamentalsFetchResult(fundamentals=fundamentals, failed_codes=failed)
